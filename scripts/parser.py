@@ -1,45 +1,57 @@
 import os
-import json
 import requests
+import json
+from glob import glob
 
-VERCEL_NOTIFY_URL = "https://avito-bot-plq2.vercel.app/api/notify-user"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-def run_parser():
-    # Путь к файлу подписок в репозитории (или скачиваем его через raw.githubusercontent.com)
-    subs_url = "https://raw.githubusercontent.com/kovalphish/avito-bot-plq2/main/subscriptions.json"
+def send_item(chat_id, item):
+    # Отправка карточки товара пользователю: фото, название, описание, место, цена
+    caption = (
+        f"<b>{item.get('title')}</b>\n\n"
+        f"💰 Цена: {item.get('price')}\n"
+        f"📍 Место: {item.get('location')}\n\n"
+        f"{item.get('description')}"
+    )
     
-    try:
-        res = requests.get(subs_url)
-        if res.status_code != 200:
-            print("No subscriptions file found.")
-            return
-        subscriptions = res.json()
-    except Exception as e:
-        print(f"Error loading subscriptions: {e}")
+    payload = {
+        "chat_id": chat_id,
+        "caption": caption,
+        "parse_mode": "HTML"
+    }
+    
+    image_url = item.get('image')
+    if image_url:
+        payload["photo"] = image_url
+        requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
+    else:
+        payload["text"] = caption
+        requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
+
+def main():
+    print("Запуск проверки объявлений...")
+    
+    # Ищем сохраненные настройки пользователей
+    user_files = glob("data/user_*.json")
+    if not user_files:
+        print("Активных поисков не найдено.")
         return
 
-    for sub in subscriptions:
-        chat_id = sub["chat_id"]
-        query = sub["query"]
-        max_price = sub["max_price"]
-        location = sub["location"]
-        
-        print(f"Checking for user {chat_id}: query='{query}', max_price={max_price}, location={location}")
-        
-        # --- ЗДЕСЬ БУДЕТ ЛОГИКА ПОИСКА ПО АВИТО ---
-        # (Скрипт делает запрос к поиску Авито по параметрам query, max_price, location)
-        # Если найдено новое объявление, которого нет в sub["notified_ads"], отправляем его:
-        
-        # Пример найденного объявления (тест):
-        # found_ad = {
-        #     "chat_id": chat_id,
-        #     "title": f"Айфон по вашему запросу ({query})",
-        #     "price": f"{max_price} ₽",
-        #     "location": location,
-        #     "url": "https://www.avito.ru",
-        #     "photo_url": "https://avatars.mds.yandex.net/get-altay/237406/2a0000015afa3fde5bc803e1e69b5e39486c/orig"
-        # }
-        # requests.post(VERCEL_NOTIFY_URL, json=found_ad)
+    for file_path in user_files:
+        with open(file_path, "r", encoding="utf-8") as f:
+            user_data = json.load(f)
+            
+        if user_data.get("step") == "ACTIVE_SEARCH":
+            chat_id = file_path.split("_")[-1].replace(".json", "")
+            
+            # Твоя логика запроса к Авито по параметрам:
+            # user_data["query"], user_data["sort"], user_data["seller"], user_data["location"], user_data["price"]
+            
+            # Пример имитации найденного нового объявления:
+            # new_item = parse_avito(user_data)
+            # if new_item:
+            #     send_item(chat_id, new_item)
 
 if __name__ == "__main__":
-    run_parser()
+    main()
